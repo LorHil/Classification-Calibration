@@ -10,7 +10,7 @@ from sklearn.metrics import confusion_matrix
 from sklearn import metrics
 import numpy as np
 import matplotlib.pyplot as plt
-from sklearn.calibration import CalibratedClassifierCV
+from sklearn.calibration import CalibratedClassifierCV, calibration_curve
 from sklearn.metrics import brier_score_loss
 #from pycalib.models import CalibratedModel, IsotonicCalibration
 
@@ -107,11 +107,11 @@ if __name__ == '__main__':
     plt.legend(loc="upper left")
     plt.title("Multinomial Naïve Bayes probabilities")
 
-    #plt.show()
+    
 
     # USING THE CLASSIFIER ON THE UNKNOWN DATA
     prob_spam_isotonic = model_isotonic.predict_proba(x_test)[:, 1]
-    print(prob_spam_isotonic)
+    #print(prob_spam_isotonic)
     with open('scores.txt', 'w') as textfile:
         # given titles to the columns
         for i in prob_spam_isotonic:
@@ -120,3 +120,47 @@ if __name__ == '__main__':
 
     textfile.close()
 
+
+    def plot_calibration_curve(est, name, fig_index):
+        """Plot calibration curve for est w/o and with calibration. """
+        # Calibrated with isotonic calibration
+        isotonic = CalibratedClassifierCV(est, cv=2, method='isotonic')
+
+        # Calibrated with sigmoid calibration
+        sigmoid = CalibratedClassifierCV(est, cv=2, method='sigmoid')
+
+
+        fig = plt.figure(fig_index, figsize=(10, 10))
+        ax1 = plt.subplot2grid((3, 1), (0, 0), rowspan=2)
+
+        ax1.plot([0, 1], [0, 1], "k:", label="Perfectly calibrated")
+        for clf, name in [(est, name), (isotonic, name + ' + Isotonic'), (sigmoid, name + ' + Sigmoid')]:
+            clf.fit(x_train, y_train)
+            y_pred = clf.predict(x_validate)
+            if hasattr(clf, "predict_proba"):
+                prob_pos = clf.predict_proba(x_validate)[:, 1]
+            else:  # use decision function
+                prob_pos = clf.decision_function(x_validate)
+                prob_pos = \
+                    (prob_pos - prob_pos.min()) / (prob_pos.max() - prob_pos.min())
+
+            clf_score = brier_score_loss(y_validate, prob_pos, pos_label=1)
+
+            fraction_of_positives, mean_predicted_value = \
+                calibration_curve(y_validate, prob_pos, n_bins=10)
+
+            ax1.plot(mean_predicted_value, fraction_of_positives, "s-",
+                 label="%s" % (name))
+
+        ax1.set_ylabel("Fraction of spam")
+        ax1.set_xlabel("Fraction of spam")
+        ax1.set_ylim([-0.05, 1.05])
+        ax1.legend(loc="lower right")
+        ax1.set_title('Calibration plots  (reliability curve)')
+
+
+        plt.tight_layout()
+        plt.show()
+
+# Plot calibration curve for Gaussian Naive Bayes
+plot_calibration_curve(MultinomialNB(), "Naive Bayes", 1)
